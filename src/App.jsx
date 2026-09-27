@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowDownRight, ArrowUpRight, BadgeCheck, Check, ChevronRight, Crown, Download, Flame, ImagePlus, LockKeyhole, MessageCircle, Plus, Share2, ShieldAlert, Sparkles, Star, Trash2, Upload, X } from 'lucide-react'
+import { ArrowDownRight, ArrowLeftRight, ArrowUpRight, BadgeCheck, Check, ChevronRight, Copy, Crown, Download, Flame, ImagePlus, LockKeyhole, MessageCircle, Plus, Share2, ShieldAlert, Sparkles, Star, Trash2, Upload, X } from 'lucide-react'
 import { toPng } from 'html-to-image'
 
 const API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY
@@ -69,6 +69,28 @@ const statInfo = [
   { key: 'vibe', name: 'VIBE', label: 'Charm / interest' },
   { key: 'delu', name: 'DELU', label: 'Red flag risk', inverse: true },
 ]
+
+const leagueTiers = [
+  { min: 0, max: 59, name: 'Free Agent', symbol: '🥉', className: 'bronze' },
+  { min: 60, max: 69, name: 'Benchwarmer', symbol: '🥈', className: 'silver' },
+  { min: 70, max: 79, name: 'Starter', symbol: '🥇', className: 'gold' },
+  { min: 80, max: 89, name: 'All-Star', symbol: '🔥', className: 'all-star' },
+  { min: 90, max: 99, name: 'Hall of Fame', symbol: '🏆', className: 'hall-of-fame' },
+]
+
+function getLeagueTier(score) {
+  return leagueTiers.find((tier) => score <= tier.max) || leagueTiers[leagueTiers.length - 1]
+}
+
+function LeagueBadge({ score }) {
+  const tier = getLeagueTier(score)
+  return <details className={`league-badge-wrap ${tier.className}`}>
+    <summary className="league-badge" aria-label={`${tier.name}, score ${score}. Show league tier breakdown`}>
+      <span aria-hidden="true">{tier.symbol}</span><span>{tier.name}</span>
+    </summary>
+    <div className="league-tooltip" role="tooltip"><strong>League tiers</strong>{leagueTiers.map((item) => <span className={item.className} key={item.name}><span>{item.symbol} {item.name}</span><b>{item.min}–{item.max}</b></span>)}</div>
+  </details>
+}
 
 function gaugePoint(progress) {
   const angle = Math.PI * (1 - progress)
@@ -142,8 +164,10 @@ function App() {
   const [error, setError] = useState('')
   const inputRef = useRef(null)
   const cardRef = useRef(null)
+  const comparisonRef = useRef(null)
   const [exporting, setExporting] = useState(false)
   const [cardReady, setCardReady] = useState(false)
+  const [copiedBioIndex, setCopiedBioIndex] = useState(null)
 
   useEffect(() => {
     setCardReady(Boolean(report && cardRef.current))
@@ -171,6 +195,12 @@ function App() {
     const timeout = window.setTimeout(() => setToast(''), 4200)
     return () => window.clearTimeout(timeout)
   }, [toast])
+
+  useEffect(() => {
+    if (copiedBioIndex === null) return undefined
+    const timeout = window.setTimeout(() => setCopiedBioIndex(null), 1800)
+    return () => window.clearTimeout(timeout)
+  }, [copiedBioIndex])
 
   const addImages = (files) => {
     setError('')
@@ -311,6 +341,60 @@ function App() {
     }
   }
 
+  const copyBio = async (bio, index) => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(bio)
+      } else {
+        const field = document.createElement('textarea')
+        field.value = bio
+        field.style.position = 'fixed'
+        field.style.opacity = '0'
+        document.body.appendChild(field)
+        field.select()
+        const copied = document.execCommand('copy')
+        field.remove()
+        if (!copied) throw new Error('Clipboard access is unavailable.')
+      }
+      setCopiedBioIndex(index)
+      setToast('Bio copied!')
+    } catch (copyError) {
+      console.warn('Could not copy the bio.', copyError)
+      setToast('Could not copy the bio. Check clipboard permissions.')
+    }
+  }
+
+  const exportBeforeAfter = async () => {
+    if (!comparisonRef.current || !images[0]) return
+    setExporting(true)
+    try {
+      const dataUrl = await toPng(comparisonRef.current, {
+        cacheBust: true,
+        width: 1080,
+        height: 1350,
+        canvasWidth: 1080,
+        canvasHeight: 1350,
+        pixelRatio: 1,
+      })
+      const link = document.createElement('a')
+      link.download = 'ProfileScore_BeforeAfter.png'
+      link.href = dataUrl
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      setToast('Before & After card downloaded.')
+    } catch (exportError) {
+      console.warn('Could not export the Before & After card.', exportError)
+      setToast('Could not export the comparison card. Please try again.')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const targetScore = report ? Math.min(99, Math.max(84, report.overall_rating + 10)) : 84
+  const comparisonFlag = report?.photo_flags?.[0]
+  const comparisonImage = comparisonFlag ? images[comparisonFlag.image_index - 1] || images[0] : images[0]
+
   return <main className="min-h-screen">
     <header className="topbar">
       <a className="brand" href="#top" aria-label="ProfileScore AI home"><span className="brand-mark"><Star size={17} fill="currentColor" /></span><span>PROFILE<span className="brand-accent">SCORE</span><small>AI SCOUTING DEPT.</small></span></a>
@@ -332,11 +416,13 @@ function App() {
       </div><aside className="scan-aside"><div className="scan-aside-head"><span className="scan-step">YOUR FIRST SCOUTING REPORT</span><span className="free-stamp">FREE</span></div><h3>Let's see what<br />the tape says.</h3><p>Our AI breaks down your photos, bio, energy, and any red-flag tendencies. No swiping required.</p><button className="scan-button" onClick={scanProfile} disabled={busy}>{busy ? <><span className="spinner" /> SCOUTING YOUR PROFILE</> : <>SCOUT MY PROFILE <ArrowUpRight size={17} /></>}</button><div className="scan-foot"><span><Check size={13} /> One free scan</span><span><Check size={13} /> Results in seconds</span></div></aside></div>
     </section>
 
-    {report && <section className="content-wrap report-section" id="report"><div className="section-heading report-heading"><div><span className="section-index">02 / THE FILM REVIEW</span><h2>Your scouting report<span>.</span></h2></div><button className="text-button" onClick={resetReport}><Trash2 size={14} /> NEW SCAN</button></div><div className="report-grid">
-      <div className="card-column"><div ref={cardRef} className="player-card"><div className="card-grain" /><div className="player-card-head"><span>PROFILE SCORE <b>AI</b></span><span>SCOUTED · #00{scanCount}</span></div><div className="player-center"><div className="rating-shield"><span>OVR</span><strong>{report.overall_rating}</strong><i /></div><div className="tier-copy"><span>CLASS OF 2026</span><h3>{report.tier_label}</h3><div className="position-pills"><span>STRIKER</span><span>PROFILE</span></div></div></div><div className="stat-list">{statInfo.map((stat) => <div className="stat-row" key={stat.key}><span className="stat-name">{stat.name}</span><div className="stat-track"><i className={stat.inverse ? 'risk' : ''} style={{ width: `${Math.max(0, Math.min(99, report.stats?.[stat.key] || 0))}%` }} /></div><strong>{report.stats?.[stat.key] ?? 0}</strong></div>)}</div><div className="traits-area"><span className="micro-label">SCOUT'S NOTES</span><div className="trait-list">{(report.traits || []).map((trait) => <span key={trait}><Sparkles size={11} />{trait}</span>)}</div></div><div className="roast-box"><span className="roast-label"><Flame size={13} /> THE FILM ROOM</span><p>“{report.roast_quote}”</p></div><div className="card-bottom"><span>PROFILE SCORE · PLAYER EDITION</span><span>NOT FOR RECRUITMENT</span></div><div className="card-watermark">ProfileScore.ai</div></div><div className="card-actions"><button className="card-action download-card" onClick={downloadCard} disabled={exporting}><Download size={15} />{exporting ? 'PREPARING CARD' : 'DOWNLOAD CARD'}</button><button className="card-action share-card" onClick={shareCard} disabled={exporting}><Share2 size={15} />SHARE</button></div></div>
+    {report && <section className="content-wrap report-section" id="report"><div className="section-heading report-heading"><div><span className="section-index">02 / THE FILM REVIEW</span><div className="report-title-line"><h2>Your scouting report<span>.</span></h2><LeagueBadge score={report.overall_rating} /></div></div><button className="text-button" onClick={resetReport}><Trash2 size={14} /> NEW SCAN</button></div><div className="report-grid">
+      <div className="card-column"><div ref={cardRef} className="player-card"><div className="card-grain" /><div className="player-card-head"><span>PROFILE SCORE <b>AI</b></span><span>SCOUTED · #00{scanCount}</span></div><div className="player-center"><div className="rating-shield"><span>OVR</span><strong>{report.overall_rating}</strong><i /></div><div className="tier-copy"><span>CLASS OF 2026</span><h3>{getLeagueTier(report.overall_rating).name}</h3><LeagueBadge score={report.overall_rating} /><div className="position-pills"><span>STRIKER</span><span>PROFILE</span></div></div></div><div className="stat-list">{statInfo.map((stat) => <div className="stat-row" key={stat.key}><span className="stat-name">{stat.name}</span><div className="stat-track"><i className={stat.inverse ? 'risk' : ''} style={{ width: `${Math.max(0, Math.min(99, report.stats?.[stat.key] || 0))}%` }} /></div><strong>{report.stats?.[stat.key] ?? 0}</strong></div>)}</div><div className="traits-area"><span className="micro-label">SCOUT'S NOTES</span><div className="trait-list">{(report.traits || []).map((trait) => <span key={trait}><Sparkles size={11} />{trait}</span>)}</div></div><div className="roast-box"><span className="roast-label"><Flame size={13} /> THE FILM ROOM</span><p>“{report.roast_quote}”</p></div><div className="card-bottom"><span>PROFILE SCORE · PLAYER EDITION</span><span>NOT FOR RECRUITMENT</span></div><div className="card-watermark">ProfileScore.ai</div></div><div className="card-actions"><button className="card-action download-card" onClick={downloadCard} disabled={exporting}><Download size={15} />{exporting ? 'PREPARING CARD' : 'DOWNLOAD CARD'}</button><button className="card-action share-card" onClick={shareCard} disabled={exporting}><Share2 size={15} />SHARE</button><button className="card-action comparison-export-button" onClick={exportBeforeAfter} disabled={exporting || !comparisonImage}><ArrowLeftRight size={15} />{exporting ? 'PREPARING SHARE CARD' : 'EXPORT BEFORE & AFTER'}</button></div>
+        {comparisonImage && <div ref={comparisonRef} className="before-after-export" aria-hidden="true"><header><span>PROFILESCORE AI <b>PROFILE REBUILD</b></span><span>SCOUT REPORT · #{String(scanCount).padStart(3, '0')}</span></header><div className="before-after-panels"><article className="compare-panel before-panel"><span className="compare-kicker">01 / BEFORE</span><img src={comparisonImage.url} alt="" /><div className="compare-score"><span>BASELINE OVR</span><strong>{report.overall_rating}</strong></div><span className="compare-flag">! {comparisonFlag?.label || 'NO FLAG DETECTED'}</span></article><article className="compare-panel after-panel"><span className="compare-kicker">02 / AFTER · EDIT PREVIEW</span><img className="after-preview-image" src={comparisonImage.url} alt="" /><div className="compare-score"><span>ASPIRATIONAL TARGET</span><strong>{targetScore}</strong></div><LeagueBadge score={targetScore} /><p className="target-disclaimer">Illustrative target only. Results vary with profile changes.</p></article></div><footer><span>BEFORE / AFTER · PROFILE EDIT PREVIEW</span><b>@ProfileScoreAI</b></footer></div>}
+      </div>
       <div className="report-details"><div className="report-detail-head"><div><span className="section-index">THE COACH'S NOTES</span><h3>How to level up</h3></div><BadgeCheck size={23} /></div>{isPaid && <div className="unlock-notice" role="note">💡 Tip: Bookmark this page or click the link in your Whop email receipt to access your unlocked report on any device.</div>}<div className={`unlock-content ${isPaid ? 'is-unlocked' : ''}`}>
         <div className="detail-block"><div className="detail-title"><span className="detail-icon photo-icon"><ImagePlus size={16} /></span><div><span>01 · CAMERA ROLL</span><h4>Photo order & lighting</h4></div></div><ul>{report.unlocked_report.photo_fixes.map((item, index) => <li key={`${index}-${item}`}><span className="list-number">0{index + 1}</span>{item}</li>)}</ul></div>
-        <div className="detail-block"><div className="detail-title"><span className="detail-icon bio-icon"><Sparkles size={16} /></span><div><span>02 · BIO LAB</span><h4>Three bio rebuilds</h4></div></div><div className="bio-options">{report.unlocked_report.rewritten_bios.map((item, index) => <p key={`${index}-${item}`}><b>0{index + 1}</b>{item}</p>)}</div></div>
+        <div className="detail-block"><div className="detail-title"><span className="detail-icon bio-icon"><Sparkles size={16} /></span><div><span>02 · BIO LAB</span><h4>Three bio rebuilds</h4></div></div><div className="bio-options">{report.unlocked_report.rewritten_bios.map((item, index) => <div className="bio-option" key={`${index}-${item}`}><p><b>0{index + 1} · {['HINGE', 'TINDER', 'BUMBLE'][index] || 'PROFILE'} BIO</b><span>{item}</span></p><button className={`copy-bio ${copiedBioIndex === index ? 'is-copied' : ''}`} onClick={() => copyBio(item, index)}>{copiedBioIndex === index ? <Check size={13} /> : <Copy size={13} />}{copiedBioIndex === index ? 'COPIED!' : 'COPY BIO'}</button></div>)}</div></div>
         <div className="detail-block"><div className="detail-title"><span className="detail-icon opener-icon"><MessageCircle size={16} /></span><div><span>03 · OPENING PLAYBOOK</span><h4>Opener vault</h4></div></div><ol>{report.unlocked_report.opener_lines.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ol></div>
         {!isPaid && <div className="blur-overlay"><div className="lock-disc"><LockKeyhole size={19} /></div><h4>Unlock your full rebuild</h4><p>Personalized photo fixes, bio options & openers.</p><button onClick={() => setPaywallOpen(true)}>UNLOCK FULL REPORT <ArrowUpRight size={15} /></button></div>}
       </div>{isPaid && <button className="report-export" onClick={() => window.print()}><Download size={16} /> Download Full Report (PDF)</button>}<div className="report-bottom"><span><Star size={13} /> Your report is yours. Use it wisely.</span><button onClick={resetReport}>RUN ANOTHER SCAN <ChevronRight size={13} /></button></div></div>
