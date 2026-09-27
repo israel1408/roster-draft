@@ -36,3 +36,28 @@
 	#report .detail-block ul,#report .detail-block ol{padding-left:0}
 	#report .detail-block li,#report .bio-options p{line-height:1.55}
 }
+.player-card:has(.hype-meter) .rating-shield{display:none}
+.player-card:has(.hype-meter) .player-center{padding-top:176px}
+.hype-meter{position:absolute;z-index:2;top:39px;left:20px;width:220px;height:170px;color:#f3f3e9;pointer-events:none;text-align:center}
+.gauge-dial{position:absolute;inset:0 auto auto 0;width:100%;height:auto;overflow:visible}
+.gauge-track,.gauge-low,.gauge-mid,.gauge-high{fill:none;stroke-width:8;stroke-linecap:round}
+.gauge-track{stroke:#49503a}
+.gauge-low{stroke:url(#gauge-low-gradient)}
+.gauge-mid{stroke:url(#gauge-mid-gradient)}
+.gauge-high{stroke:#a6ff45;filter:drop-shadow(0 0 4px #a6ff4599)}
+.gauge-needle{stroke:#f7f8e9;stroke-width:2.5;stroke-linecap:round;filter:drop-shadow(0 0 3px #fff8)}
+.gauge-hub{fill:#d9f36a;stroke:#171a13;stroke-width:2}
+.gauge-score{position:absolute;top:56%;left:0;width:100%;font-family:'Barlow Condensed',sans-serif;font-size:48px;line-height:.9;color:#f5f5eb}
+.gauge-label{position:absolute;top:82%;left:0;width:100%;font-size:8px;letter-spacing:1.6px;font-weight:800;color:#aeb394}
+.photo-radar{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:12px;margin-top:18px}
+.radar-photo{position:relative;aspect-ratio:4/3;min-width:0;margin:0;overflow:hidden;border:1px solid #494332;background:#171a16;outline:none}
+.radar-photo img{display:block;width:100%;height:100%;object-fit:cover}
+.radar-photo:focus-visible{outline:2px solid #ff6256;outline-offset:3px}
+.radar-tag{position:absolute;top:11px;left:11px;display:flex;align-items:center;gap:7px;max-width:calc(100% - 22px);padding:7px 9px;border:1px solid #ff665b77;background:#1b1110e8;color:#ffd5cb;font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;letter-spacing:.6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;animation:radar-fade 3.8s ease-out forwards}
+.radar-photo:hover .radar-tag,.radar-photo:focus .radar-tag{opacity:1;animation:none}
+.radar-pulse{position:relative;width:8px;height:8px;flex:none;border-radius:50%;background:#ff554d;box-shadow:0 0 9px #ff554d99;animation:radar-ping 1s ease-out infinite}
+.radar-pulse:after{position:absolute;inset:-4px;border:1px solid #ff554d99;border-radius:50%;content:''}
+@keyframes radar-fade{0%,62%{opacity:1}100%{opacity:0}}
+@keyframes radar-ping{0%{box-shadow:0 0 0 0 #ff554d88}100%{box-shadow:0 0 0 7px #ff554d00}}
+@media(max-width:760px){.player-card:has(.hype-meter) .player-center{padding-top:168px}.hype-meter{top:38px;left:50%;width:min(220px,72vw);transform:translateX(-50%)}}
+@media print{.radar-tag{opacity:1!important;animation:none!important}}

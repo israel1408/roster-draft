@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ArrowDownRight, ArrowUpRight, BadgeCheck, Check, ChevronRight, Crown, Download, Flame, ImagePlus, LockKeyhole, MessageCircle, Plus, Share2, ShieldAlert, Sparkles, Star, Trash2, Upload, X } from 'lucide-react'
 import { toPng } from 'html-to-image'
 
@@ -28,6 +29,7 @@ const fallbackReport = {
       'Settle a debate for me: dinner reservation or spontaneous food crawl?',
     ],
   },
+  photo_flags: [],
 }
 
 function normalizeReport(data) {
@@ -52,6 +54,12 @@ function normalizeReport(data) {
       rewritten_bios: stringList(unlocked.rewritten_bios, fallbackReport.unlocked_report.rewritten_bios),
       opener_lines: stringList(unlocked.opener_lines, fallbackReport.unlocked_report.opener_lines),
     },
+    photo_flags: Array.isArray(data.photo_flags) ? data.photo_flags.flatMap((flag) => {
+      if (!flag || typeof flag !== 'object') return []
+      const image_index = Number(flag.image_index)
+      const label = typeof flag.label === 'string' ? flag.label.trim().toUpperCase().replace(/[^A-Z0-9 -]/g, '').slice(0, 32) : ''
+      return Number.isInteger(image_index) && image_index >= 1 && image_index <= 3 && label ? [{ image_index, label }] : []
+    }) : [],
   }
 }
 
@@ -61,6 +69,67 @@ const statInfo = [
   { key: 'vibe', name: 'VIBE', label: 'Charm / interest' },
   { key: 'delu', name: 'DELU', label: 'Red flag risk', inverse: true },
 ]
+
+function gaugePoint(progress) {
+  const angle = Math.PI * (1 - progress)
+  return { x: 100 + 88 * Math.cos(angle), y: 100 - 88 * Math.sin(angle) }
+}
+
+function gaugeArc(start, end) {
+  const from = gaugePoint(start)
+  const to = gaugePoint(end)
+  return `M ${from.x} ${from.y} A 88 88 0 0 1 ${to.x} ${to.y}`
+}
+
+function HypeMeter({ score, animate }) {
+  const [displayedScore, setDisplayedScore] = useState(animate ? 20 : score)
+
+  useEffect(() => {
+    if (!animate || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setDisplayedScore(score)
+      return undefined
+    }
+
+    let frame
+    const started = performance.now()
+    const battleDuration = 1600
+    const totalDuration = 2000
+    const tick = (now) => {
+      const elapsed = now - started
+      const battleScore = 55 + 35 * Math.sin(elapsed / 72)
+      if (elapsed < battleDuration) {
+        setDisplayedScore(battleScore)
+      } else {
+        const progress = Math.min(1, (elapsed - battleDuration) / (totalDuration - battleDuration))
+        const eased = 1 - (1 - progress) ** 3
+        setDisplayedScore(battleScore + (score - battleScore) * eased)
+      }
+      if (elapsed < totalDuration) frame = window.requestAnimationFrame(tick)
+      else setDisplayedScore(score)
+    }
+
+    frame = window.requestAnimationFrame(tick)
+    return () => window.cancelAnimationFrame(frame)
+  }, [animate, score])
+
+  const needleAngle = (displayedScore / 99) * 180 - 90
+  return <div className="hype-meter" role="img" aria-label={`Overall score ${score} out of 99`}>
+    <svg className="gauge-dial" viewBox="0 0 200 120" aria-hidden="true">
+      <defs>
+        <linearGradient id="gauge-low-gradient"><stop offset="0%" stopColor="#ff5148" /><stop offset="100%" stopColor="#ff9b43" /></linearGradient>
+        <linearGradient id="gauge-mid-gradient"><stop offset="0%" stopColor="#f5d657" /><stop offset="100%" stopColor="#b9ef72" /></linearGradient>
+      </defs>
+      <path className="gauge-track" d={gaugeArc(0, 1)} />
+      <path className="gauge-low" d={gaugeArc(0, 50 / 99)} />
+      <path className="gauge-mid" d={gaugeArc(50 / 99, 75 / 99)} />
+      <path className="gauge-high" d={gaugeArc(75 / 99, 1)} />
+      <line className="gauge-needle" x1="100" y1="100" x2="100" y2="26" transform={`rotate(${needleAngle} 100 100)`} />
+      <circle className="gauge-hub" cx="100" cy="100" r="6" />
+    </svg>
+    <strong className="gauge-score">{Math.round(displayedScore)}</strong>
+    <span className="gauge-label">OVERALL SCORE</span>
+  </div>
+}
 
 function App() {
   const [images, setImages] = useState([])
@@ -74,6 +143,11 @@ function App() {
   const inputRef = useRef(null)
   const cardRef = useRef(null)
   const [exporting, setExporting] = useState(false)
+  const [cardReady, setCardReady] = useState(false)
+
+  useEffect(() => {
+    setCardReady(Boolean(report && cardRef.current))
+  }, [report])
 
   useEffect(() => {
     if (localStorage.getItem(STORAGE_COUNT) === null) localStorage.setItem(STORAGE_COUNT, '0')
@@ -140,6 +214,7 @@ function App() {
         image_url: { url: await readAsDataUrl(file) },
       })))
       const instructions = `You are ProfileScore AI, a sharp but playful dating profile and chat scout. Analyze the provided profile screenshots and/or text-thread screenshots. Be direct, specific, funny, and never cruel about protected traits or appearance. Return strictly valid raw JSON only, without markdown or code fences, matching this structure exactly: {"overall_rating":54,"tier_label":"Benchwarmer","stats":{"phto":42,"bio":35,"vibe":50,"delu":88},"traits":["Dry Bio","Mugshot Lighting","Unclear Intent"],"roast_quote":"One short, punchy sentence.","unlocked_report":{"photo_fixes":["Specific step-by-step photo fix"],"rewritten_bios":["Option 1...","Option 2...","Option 3..."],"opener_lines":["Line 1...","Line 2...","Line 3...","Line 4...","Line 5..."]}}. Use integer scores from 0 to 99. DELU measures red-flag risk, so higher is riskier. Give actionable, customized recommendations.`
+      const reportInstructions = `${instructions} Add "photo_flags" as an array of objects with one-based image_index and a short uppercase label, for example [{"image_index":1,"label":"BAD LIGHTING"}]. Flag only clearly visible, actionable photo penalties such as obstructed eye contact, dim lighting, disorderly backgrounds, distracting bathroom mirrors, or sunglasses obscuring the eyes. Use [] when no specific photo issue is visible.`
       const response = await fetch(MODEL_URL, {
         method: 'POST',
         headers: {
@@ -150,7 +225,7 @@ function App() {
         },
         body: JSON.stringify({
           model: 'openrouter/free',
-          messages: [{ role: 'user', content: [{ type: 'text', text: instructions }, ...imageParts] }],
+          messages: [{ role: 'user', content: [{ type: 'text', text: reportInstructions }, ...imageParts] }],
           response_format: { type: 'json_object' },
           temperature: 0.8,
         }),
@@ -265,7 +340,7 @@ function App() {
         <div className="detail-block"><div className="detail-title"><span className="detail-icon opener-icon"><MessageCircle size={16} /></span><div><span>03 · OPENING PLAYBOOK</span><h4>Opener vault</h4></div></div><ol>{report.unlocked_report.opener_lines.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ol></div>
         {!isPaid && <div className="blur-overlay"><div className="lock-disc"><LockKeyhole size={19} /></div><h4>Unlock your full rebuild</h4><p>Personalized photo fixes, bio options & openers.</p><button onClick={() => setPaywallOpen(true)}>UNLOCK FULL REPORT <ArrowUpRight size={15} /></button></div>}
       </div>{isPaid && <button className="report-export" onClick={() => window.print()}><Download size={16} /> Download Full Report (PDF)</button>}<div className="report-bottom"><span><Star size={13} /> Your report is yours. Use it wisely.</span><button onClick={resetReport}>RUN ANOTHER SCAN <ChevronRight size={13} /></button></div></div>
-    </div></section>}
+    </div>{isPaid && cardReady && createPortal(<HypeMeter score={report.overall_rating} animate />, cardRef.current)}{isPaid && report.photo_flags?.some((flag) => images[flag.image_index - 1]) && <div className="photo-radar" aria-label="Detected photo flags">{report.photo_flags.filter((flag) => images[flag.image_index - 1]).map((flag, index) => <figure className="radar-photo" tabIndex={0} key={`${flag.image_index}-${index}`}><img src={images[flag.image_index - 1].url} alt={`Uploaded screenshot ${flag.image_index} with ${flag.label.toLowerCase()} flagged`} /><figcaption className="radar-tag"><span className="radar-pulse" aria-hidden="true" /><span>! {flag.label}</span></figcaption></figure>)}</div>}</section>}
 
     <footer className="footer"><a className="brand footer-brand" href="#top"><span className="brand-mark"><Star size={15} fill="currentColor" /></span><span>PROFILE<span className="brand-accent">SCORE</span><small>AI SCOUTING DEPT.</small></span></a><span>THE GAME IS YOURS TO PLAY.</span><span>© 2026 PROFILESCORE AI</span></footer>
     {toast && <div className="toast"><span className="toast-check"><Check size={14} /></span>{toast}<button aria-label="Dismiss notification" onClick={() => setToast('')}><X size={14} /></button></div>}
