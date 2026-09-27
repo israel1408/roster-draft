@@ -375,6 +375,13 @@ function App() {
         canvasWidth: 1080,
         canvasHeight: 1350,
         pixelRatio: 1,
+        backgroundColor: '#151813',
+        style: {
+          position: 'fixed',
+          left: '0px',
+          top: '0px',
+          zIndex: '1',
+        },
       })
       const link = document.createElement('a')
       link.download = 'ProfileScore_BeforeAfter.png'
