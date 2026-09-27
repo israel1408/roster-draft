@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowDownRight, ArrowUpRight, BadgeCheck, Check, ChevronRight, Crown, Flame, ImagePlus, LockKeyhole, MessageCircle, Plus, ShieldAlert, Sparkles, Star, Trash2, Upload, X } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, BadgeCheck, Check, ChevronRight, Crown, Download, Flame, ImagePlus, LockKeyhole, MessageCircle, Plus, Share2, ShieldAlert, Sparkles, Star, Trash2, Upload, X } from 'lucide-react'
+import { toPng } from 'html-to-image'
 
 const API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY
 const MODEL_URL = 'https://openrouter.ai/api/v1/chat/completions'
-const STORAGE_COUNT = 'profilescore_scan_count'
+const STORAGE_COUNT = 'profilescore_scan_count_v2'
 const STORAGE_PAID = 'profilescore_is_paid'
 const emptyReport = { overall_rating: 0, tier_label: 'Awaiting your scouting report', stats: { phto: 0, bio: 0, vibe: 0, delu: 0 }, traits: [], roast_quote: '', unlocked_report: { photo_fixes: [], rewritten_bios: [], opener_lines: [] } }
 const fallbackReport = {
@@ -71,6 +72,8 @@ function App() {
   const [toast, setToast] = useState('')
   const [error, setError] = useState('')
   const inputRef = useRef(null)
+  const cardRef = useRef(null)
+  const [exporting, setExporting] = useState(false)
 
   useEffect(() => {
     if (localStorage.getItem(STORAGE_COUNT) === null) localStorage.setItem(STORAGE_COUNT, '0')
@@ -180,6 +183,59 @@ function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
+  const captureCard = () => toPng(cardRef.current, { cacheBust: true, pixelRatio: 2 })
+
+  const downloadCard = async () => {
+    if (!cardRef.current) return
+    setExporting(true)
+    try {
+      const dataUrl = await captureCard()
+      const link = document.createElement('a')
+      link.download = 'my-profile-score.png'
+      link.href = dataUrl
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      setToast('Player Card downloaded.')
+    } catch (exportError) {
+      console.warn('Could not export the Player Card.', exportError)
+      setToast('Could not export the Player Card. Please try again.')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const shareCard = async () => {
+    if (!cardRef.current) return
+    setExporting(true)
+    try {
+      const dataUrl = await captureCard()
+      const blob = await (await fetch(dataUrl)).blob()
+      const file = new File([blob], 'my-profile-score.png', { type: 'image/png' })
+      if (navigator.canShare?.({ files: [file] }) && navigator.share) {
+        await navigator.share({ files: [file], title: 'My ProfileScore Player Card' })
+        return
+      }
+      if (navigator.share) {
+        await navigator.share({ title: 'My ProfileScore Player Card', text: 'Check out my ProfileScore Player Card.', url: window.location.href })
+        return
+      }
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(window.location.href)
+        setToast('Player Card link copied.')
+      } else {
+        setToast('Sharing is not supported in this browser.')
+      }
+    } catch (shareError) {
+      if (shareError.name !== 'AbortError') {
+        console.warn('Could not share the Player Card.', shareError)
+        setToast('Could not share the Player Card. Please try again.')
+      }
+    } finally {
+      setExporting(false)
+    }
+  }
+
   return <main className="min-h-screen">
     <header className="topbar">
       <a className="brand" href="#top" aria-label="ProfileScore AI home"><span className="brand-mark"><Star size={17} fill="currentColor" /></span><span>PROFILE<span className="brand-accent">SCORE</span><small>AI SCOUTING DEPT.</small></span></a>
@@ -202,7 +258,7 @@ function App() {
     </section>
 
     {report && <section className="content-wrap report-section" id="report"><div className="section-heading report-heading"><div><span className="section-index">02 / THE FILM REVIEW</span><h2>Your scouting report<span>.</span></h2></div><button className="text-button" onClick={resetReport}><Trash2 size={14} /> NEW SCAN</button></div><div className="report-grid">
-      <div className="player-card"><div className="card-grain" /><div className="player-card-head"><span>PROFILE SCORE <b>AI</b></span><span>SCOUTED · #00{scanCount}</span></div><div className="player-center"><div className="rating-shield"><span>OVR</span><strong>{report.overall_rating}</strong><i /></div><div className="tier-copy"><span>CLASS OF 2026</span><h3>{report.tier_label}</h3><div className="position-pills"><span>STRIKER</span><span>PROFILE</span></div></div></div><div className="stat-list">{statInfo.map((stat) => <div className="stat-row" key={stat.key}><span className="stat-name">{stat.name}</span><div className="stat-track"><i className={stat.inverse ? 'risk' : ''} style={{ width: `${Math.max(0, Math.min(99, report.stats?.[stat.key] || 0))}%` }} /></div><strong>{report.stats?.[stat.key] ?? 0}</strong></div>)}</div><div className="traits-area"><span className="micro-label">SCOUT'S NOTES</span><div className="trait-list">{(report.traits || []).map((trait) => <span key={trait}><Sparkles size={11} />{trait}</span>)}</div></div><div className="roast-box"><span className="roast-label"><Flame size={13} /> THE FILM ROOM</span><p>“{report.roast_quote}”</p></div><div className="card-bottom"><span>PROFILE SCORE · PLAYER EDITION</span><span>NOT FOR RECRUITMENT</span></div></div>
+      <div className="card-column"><div ref={cardRef} className="player-card"><div className="card-grain" /><div className="player-card-head"><span>PROFILE SCORE <b>AI</b></span><span>SCOUTED · #00{scanCount}</span></div><div className="player-center"><div className="rating-shield"><span>OVR</span><strong>{report.overall_rating}</strong><i /></div><div className="tier-copy"><span>CLASS OF 2026</span><h3>{report.tier_label}</h3><div className="position-pills"><span>STRIKER</span><span>PROFILE</span></div></div></div><div className="stat-list">{statInfo.map((stat) => <div className="stat-row" key={stat.key}><span className="stat-name">{stat.name}</span><div className="stat-track"><i className={stat.inverse ? 'risk' : ''} style={{ width: `${Math.max(0, Math.min(99, report.stats?.[stat.key] || 0))}%` }} /></div><strong>{report.stats?.[stat.key] ?? 0}</strong></div>)}</div><div className="traits-area"><span className="micro-label">SCOUT'S NOTES</span><div className="trait-list">{(report.traits || []).map((trait) => <span key={trait}><Sparkles size={11} />{trait}</span>)}</div></div><div className="roast-box"><span className="roast-label"><Flame size={13} /> THE FILM ROOM</span><p>“{report.roast_quote}”</p></div><div className="card-bottom"><span>PROFILE SCORE · PLAYER EDITION</span><span>NOT FOR RECRUITMENT</span></div><div className="card-watermark">ProfileScore.ai</div></div><div className="card-actions"><button className="card-action download-card" onClick={downloadCard} disabled={exporting}><Download size={15} />{exporting ? 'PREPARING CARD' : 'DOWNLOAD CARD'}</button><button className="card-action share-card" onClick={shareCard} disabled={exporting}><Share2 size={15} />SHARE</button></div></div>
       <div className="report-details"><div className="report-detail-head"><div><span className="section-index">THE COACH'S NOTES</span><h3>How to level up</h3></div><BadgeCheck size={23} /></div><div className={`unlock-content ${isPaid ? 'is-unlocked' : ''}`}>
         <div className="detail-block"><div className="detail-title"><span className="detail-icon photo-icon"><ImagePlus size={16} /></span><div><span>01 · CAMERA ROLL</span><h4>Photo order & lighting</h4></div></div><ul>{report.unlocked_report.photo_fixes.map((item, index) => <li key={`${index}-${item}`}><span className="list-number">0{index + 1}</span>{item}</li>)}</ul></div>
         <div className="detail-block"><div className="detail-title"><span className="detail-icon bio-icon"><Sparkles size={16} /></span><div><span>02 · BIO LAB</span><h4>Three bio rebuilds</h4></div></div><div className="bio-options">{report.unlocked_report.rewritten_bios.map((item, index) => <p key={`${index}-${item}`}><b>0{index + 1}</b>{item}</p>)}</div></div>
