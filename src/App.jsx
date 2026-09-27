@@ -369,7 +369,7 @@ function App() {
     setExporting(true)
     try {
       const dataUrl = await toPng(comparisonRef.current, {
-        cacheBust: true,
+        cacheBust: false,
         width: 1080,
         height: 1350,
         canvasWidth: 1080,
