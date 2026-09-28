@@ -13,11 +13,16 @@ const personas = [
   { id: 'ramsay', label: '🔥 Gordon Ramsay Mode', context: 'Use a savage roast-comedy voice inspired by a high-pressure TV kitchen critique, but keep it constructive, specific, and never cruel about protected traits or appearance.' },
   { id: 'sergeant', label: '🎖️ Drill Sergeant', context: 'Use a disciplined, aggressive-but-constructive drill-sergeant voice: direct commands, accountability, and practical next steps, without insults about protected traits or appearance.' },
 ]
-const emptyReport = { overall_rating: 0, tier_label: 'Awaiting your scouting report', stats: { phto: 0, bio: 0, vibe: 0, delu: 0 }, traits: [], roast_quote: '', unlocked_report: { photo_fixes: [], rewritten_bios: [], opener_lines: [] } }
+const emptyReport = { overall_rating: 0, tier_label: 'Awaiting your scouting report', stats: { phto: 0, bio: 0, vibe: 0, delu: 0 }, delusion_score: 0, delusion_line: '', women_audience_fit: 0, aesthetic_grade: 'B', meme_hook: '', traits: [], roast_quote: '', unlocked_report: { photo_fixes: [], rewritten_bios: [], opener_lines: [] } }
 const fallbackReport = {
   overall_rating: 74,
   tier_label: 'Benchwarmer',
   stats: { phto: 65, bio: 40, vibe: 70, delu: 85 },
+  delusion_score: 40,
+  delusion_line: '40% delusional: the bio says "adventure seeker," but every photo is indoors.',
+  women_audience_fit: 68,
+  aesthetic_grade: 'B',
+  meme_hook: 'They’re a 10 but the bio is giving group-project energy.',
   traits: ['Solid First Impression', 'Bio Needs A Hook', 'Potential Starter'],
   roast_quote: 'Your photos made the roster, but your bio is giving the coach absolutely nothing to work with.',
   unlocked_report: {
@@ -41,6 +46,7 @@ const fallbackReport = {
 function normalizeReport(data) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Report must be a JSON object.')
   const score = (value, fallback) => Number.isFinite(value) ? Math.max(0, Math.min(99, Math.round(value))) : fallback
+  const percent = (value, fallback) => Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : fallback
   const stringList = (value, fallback) => Array.isArray(value) ? value.filter((item) => typeof item === 'string') : fallback
   const stats = data.stats && typeof data.stats === 'object' ? data.stats : {}
   const unlocked = data.unlocked_report && typeof data.unlocked_report === 'object' ? data.unlocked_report : {}
@@ -53,6 +59,11 @@ function normalizeReport(data) {
       vibe: score(stats.vibe, fallbackReport.stats.vibe),
       delu: score(stats.delu, fallbackReport.stats.delu),
     },
+    delusion_score: percent(data.delusion_score, fallbackReport.delusion_score),
+    delusion_line: typeof data.delusion_line === 'string' ? data.delusion_line.slice(0, 180) : fallbackReport.delusion_line,
+    women_audience_fit: percent(data.women_audience_fit, fallbackReport.women_audience_fit),
+    aesthetic_grade: ['A+', 'B', 'C'].includes(data.aesthetic_grade) ? data.aesthetic_grade : fallbackReport.aesthetic_grade,
+    meme_hook: typeof data.meme_hook === 'string' ? data.meme_hook.slice(0, 140) : fallbackReport.meme_hook,
     traits: stringList(data.traits, fallbackReport.traits),
     roast_quote: typeof data.roast_quote === 'string' ? data.roast_quote : fallbackReport.roast_quote,
     unlocked_report: {
@@ -171,18 +182,27 @@ function HypeMeter({ score, animate }) {
   </div>
 }
 
+function DelusionMeter({ score, line }) {
+  return <div className="delusion-meter" aria-label={`Delusion index ${score} percent`}>
+    <div className="delusion-ring" style={{ '--delusion-progress': `${score}%` }}><strong>{score}<small>%</small></strong></div>
+    <div className="delusion-copy"><span>DELUSION INDEX</span><p>{line}</p></div>
+  </div>
+}
+
 function App() {
   const [images, setImages] = useState([])
   const [report, setReport] = useState(null)
   const [scanCount, setScanCount] = useState(() => Number(localStorage.getItem(STORAGE_COUNT) || 0))
   const [isPaid, setIsPaid] = useState(() => localStorage.getItem(STORAGE_PAID) === 'true')
   const [persona, setPersona] = useState('sportscaster')
+  const [cardTheme, setCardTheme] = useState('sports')
   const [busy, setBusy] = useState(false)
   const [paywallOpen, setPaywallOpen] = useState(false)
   const [toast, setToast] = useState('')
   const [error, setError] = useState('')
   const inputRef = useRef(null)
   const cardRef = useRef(null)
+  const storyRef = useRef(null)
   const [exporting, setExporting] = useState(false)
   const [cardReady, setCardReady] = useState(false)
   const [copiedBioIndex, setCopiedBioIndex] = useState(null)
@@ -262,7 +282,7 @@ function App() {
         image_url: { url: await readAsDataUrl(file) },
       })))
       const selectedPersona = personas.find((option) => option.id === persona) || personas[0]
-      const instructions = `You are ProfileScore AI, a sharp dating profile and chat scout. ${selectedPersona.context} Analyze the provided profile screenshots and/or text-thread screenshots. Be direct, specific, and never cruel about protected traits or appearance. Return strictly valid raw JSON only, without markdown or code fences, matching this structure exactly: {"overall_rating":54,"tier_label":"Benchwarmer","stats":{"phto":42,"bio":35,"vibe":50,"delu":88},"traits":["Dry Bio","Mugshot Lighting","Unclear Intent"],"roast_quote":"One short, punchy sentence.","unlocked_report":{"photo_fixes":["Specific step-by-step photo fix"],"rewritten_bios":["Option 1...","Option 2...","Option 3..."],"opener_lines":["Line 1...","Line 2...","Line 3...","Line 4...","Line 5..."]}}. Use integer scores from 0 to 99. DELU measures red-flag risk, so higher is riskier. Give actionable, customized recommendations.`
+      const instructions = `You are ProfileScore AI, a sharp dating profile and chat scout. ${selectedPersona.context} Analyze the provided profile screenshots and/or text-thread screenshots. Be direct, specific, and never cruel about protected traits or appearance. Consider practical compatibility with women who may be interested in dating the profile owner; this is a nuanced estimate based on profile choices, not a claim about all women or anyone's identity. Do not infer gender or pronouns from appearance; use the profile's own language, or they/them if unclear. Return strictly valid raw JSON only, without markdown or code fences, matching this structure exactly: {"overall_rating":54,"tier_label":"Benchwarmer","stats":{"phto":42,"bio":35,"vibe":50,"delu":88},"delusion_score":40,"delusion_line":"40% delusional: one short, witty explanation grounded in the screenshots.","women_audience_fit":68,"aesthetic_grade":"B","meme_hook":"They’re a 10 but [specific, lighthearted profile flaw].","traits":["Dry Bio","Dim Lighting","Unclear Intent"],"roast_quote":"One short, punchy sentence.","unlocked_report":{"photo_fixes":["Specific step-by-step photo fix"],"rewritten_bios":["Option 1...","Option 2...","Option 3..."],"opener_lines":["Line 1...","Line 2...","Line 3...","Line 4...","Line 5..."]}}. Use integer scores from 0 to 99 except delusion_score and women_audience_fit which are 0 to 100. DELU measures red-flag risk, so higher is riskier. delusion_score measures a mismatch between self-presentation and evidence, not mental health. Use aesthetic_grade A+, B, or C. Make the meme hook one concise, non-appearance-based profile critique. Give actionable, customized recommendations.`
       const reportInstructions = `${instructions} Add "photo_flags" as an array of objects with one-based image_index and a short uppercase label, for example [{"image_index":1,"label":"BAD LIGHTING"}]. Flag only clearly visible, actionable photo penalties such as obstructed eye contact, dim lighting, disorderly backgrounds, distracting bathroom mirrors, or sunglasses obscuring the eyes. Use [] when no specific photo issue is visible.`
       const response = await fetch(MODEL_URL, {
         method: 'POST',
@@ -308,6 +328,8 @@ function App() {
   }
 
   const captureCard = () => toPng(cardRef.current, { cacheBust: true, pixelRatio: 2 })
+
+  const captureStory = () => toPng(storyRef.current, { cacheBust: true, pixelRatio: 2, width: 360, height: 640 })
 
   const downloadCard = async () => {
     if (!cardRef.current) return
@@ -360,6 +382,34 @@ function App() {
     }
   }
 
+  const shareStory = async () => {
+    if (!storyRef.current) return
+    setExporting(true)
+    try {
+      const dataUrl = await captureStory()
+      const blob = await (await fetch(dataUrl)).blob()
+      const file = new File([blob], 'profilescore-ig-story.png', { type: 'image/png' })
+      if (navigator.canShare?.({ files: [file] }) && navigator.share) {
+        await navigator.share({ files: [file], title: 'ProfileScore Story' })
+      } else {
+        const link = document.createElement('a')
+        link.download = 'profilescore-ig-story.png'
+        link.href = dataUrl
+        document.body.appendChild(link)
+        link.click()
+        link.remove()
+        setToast('Story PNG downloaded. Add it to your Instagram Story.')
+      }
+    } catch (shareError) {
+      if (shareError.name !== 'AbortError') {
+        console.warn('Could not export the Instagram Story.', shareError)
+        setToast('Could not export the Story image. Please try again.')
+      }
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const copyBio = async (bio, index) => {
     try {
       if (navigator.clipboard?.writeText) {
@@ -397,6 +447,7 @@ function App() {
 
     <section className="content-wrap" id="scout">
       <div className="section-heading"><div><span className="section-index">01 / THE SCOUTING ROOM</span><h2>Submit your tape<span>.</span></h2></div><span className="limit-note"><ImagePlus size={14} /> UP TO 3 SCREENSHOTS</span></div>
+      <fieldset className="theme-picker"><legend>CHOOSE YOUR CARD THEME</legend><div role="radiogroup" aria-label="Card theme"><button type="button" role="radio" aria-checked={cardTheme === 'sports'} className={cardTheme === 'sports' ? 'theme-option is-selected' : 'theme-option'} onClick={() => setCardTheme('sports')}><span>SPORTS SCOUT</span><small>EA SPORTS OVR</small></button><button type="button" role="radio" aria-checked={cardTheme === 'aesthetic'} className={cardTheme === 'aesthetic' ? 'theme-option is-selected' : 'theme-option'} onClick={() => setCardTheme('aesthetic')}><span>COVER STAR</span><small>AESTHETIC EDITION</small></button></div></fieldset>
       <div className="upload-layout"><div className="upload-column">
         <input ref={inputRef} className="file-input" type="file" accept="image/*" multiple onChange={(event) => { addImages(event.target.files); event.target.value = '' }} />
         {images.length === 0 ? <button className="dropzone" onClick={() => inputRef.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); addImages(event.dataTransfer.files) }}><span className="upload-mark"><Upload size={22} /></span><span className="drop-title">Drop your screenshots here</span><span className="drop-subtitle">Hinge, Tinder, Bumble or the chat receipts</span><span className="browse-button">Browse files <ChevronRight size={14} /></span><span className="file-types">PNG, JPG OR WEBP · MAX 3 IMAGES</span></button> : <div className="image-grid">{images.map((image, index) => <div className="image-tile" key={image.id}><img src={image.url} alt={`Profile screenshot ${index + 1}`} /><span className="image-index">TAPE 0{index + 1}</span><button aria-label={`Remove screenshot ${index + 1}`} className="remove-image" onClick={() => removeImage(image.id)}><X size={14} /></button></div>)}{images.length < 3 && <button className="add-tile" onClick={() => inputRef.current?.click()}><Plus size={20} /><span>ADD SCREENSHOT</span></button>}</div>}
@@ -405,11 +456,12 @@ function App() {
     </section>
 
     {report && <section className="content-wrap report-section" id="report">
-      <div className="section-heading report-heading"><div><span className="section-index">02 / THE FILM REVIEW</span><div className="report-title-line"><h2>Your scouting report<span>.</span></h2><span className={!isPaid ? 'league-badge-gated' : ''}><LeagueBadge score={report.overall_rating} /></span></div></div><button className="text-button" onClick={resetReport}><Trash2 size={14} /> NEW SCAN</button></div>
+      <div className="section-heading report-heading"><div><span className="section-index">02 / THE FILM REVIEW</span><div className="report-title-line"><h2>Your scouting report<span>.</span></h2><span className={!isPaid ? 'league-badge-gated' : ''}><LeagueBadge score={report.overall_rating} /></span></div><p className="meme-hook">{report.meme_hook}</p></div><button className="text-button" onClick={resetReport}><Trash2 size={14} /> NEW SCAN</button></div>
+      <div className="report-insights"><div className="audience-fit"><span>WOMEN'S READ</span><strong>{report.women_audience_fit}%</strong><small>A rough compatibility read, not a universal verdict.</small></div><DelusionMeter score={report.delusion_score} line={report.delusion_line} /></div>
       <div className="report-grid">
         <div className="card-column">
-          <div ref={cardRef} className={`player-card ${!isPaid ? 'is-locked' : ''}`}><div className="card-grain" /><div className="player-card-head"><span>PROFILE SCORE <b>AI</b></span><span>SCOUTED · #00{scanCount}</span></div><div className="player-center"><div className="rating-shield"><span>{isPaid ? 'OVR' : ''}</span><strong>{isPaid ? report.overall_rating : '?? OVR'}</strong><i /></div><div className="tier-copy"><span>CLASS OF 2026</span><h3>{getLeagueTier(report.overall_rating).name}</h3><LeagueBadge score={report.overall_rating} /><div className="position-pills"><span>STRIKER</span><span>PROFILE</span></div></div></div><div className="stat-list">{statInfo.map((stat) => <div className="stat-row" key={stat.key}><span className="stat-name">{stat.name}</span><div className="stat-track"><i className={stat.inverse ? 'risk' : ''} style={{ width: `${Math.max(0, Math.min(99, report.stats?.[stat.key] || 0))}%` }} /></div><strong>{report.stats?.[stat.key] ?? 0}</strong></div>)}</div><div className="traits-area"><span className="micro-label">SCOUT'S NOTES</span><div className="trait-list">{(report.traits || []).map((trait) => <span key={trait}><Sparkles size={11} />{trait}</span>)}</div></div><div className="roast-box"><span className="roast-label"><Flame size={13} /> THE FILM ROOM</span><p>“{report.roast_quote}”</p></div><div className="card-bottom"><span>PROFILE SCORE · PLAYER EDITION</span><span>NOT FOR RECRUITMENT</span></div><div className="card-watermark">ProfileScore.ai</div></div>
-          <div className="card-actions"><button className="card-action download-card" onClick={downloadCard} disabled={!isPaid || exporting}><Download size={15} />{exporting ? 'PREPARING PNG' : 'EXPORT PNG'}</button><button className="card-action share-card" onClick={shareCard} disabled={!isPaid || exporting}><Share2 size={15} />SHARE</button></div>
+          <div ref={cardRef} className={`player-card theme-${cardTheme} ${!isPaid ? 'is-locked' : ''}`}><div className="card-grain" />{cardTheme === 'aesthetic' ? <><div className="cover-kicker">PROFILE SCORE AI <span>ISSUE 01 · 2026</span></div><div className="cover-grade"><strong>{report.aesthetic_grade}</strong><span>AESTHETIC<br />GRADE</span></div><div className="cover-center"><span>THE PROFILE EDIT</span><h3>Vibe<br /><i>Check</i></h3><strong>{isPaid ? report.overall_rating : '??'}<small> / 99</small></strong><p>{getLeagueTier(report.overall_rating).name} · WOMEN'S READ {report.women_audience_fit}%</p></div><div className={`cover-stats ${!isPaid ? 'is-locked' : ''}`}>{statInfo.map((stat) => <span key={stat.key}>{stat.name}<b>{report.stats?.[stat.key] ?? 0}</b></span>)}</div><div className="cover-caption">{report.meme_hook}</div><div className="cover-watermark">PROFILESCORE · THE AESTHETIC ISSUE</div></> : <><div className="player-card-head"><span>PROFILE SCORE <b>AI</b></span><span>SCOUTED · #00{scanCount}</span></div><div className="player-center"><div className="rating-shield"><span>{isPaid ? 'OVR' : ''}</span><strong>{isPaid ? report.overall_rating : '?? OVR'}</strong><i /></div><div className="tier-copy"><span>CLASS OF 2026</span><h3>{getLeagueTier(report.overall_rating).name}</h3><LeagueBadge score={report.overall_rating} /><div className="position-pills"><span>STRIKER</span><span>PROFILE</span></div></div></div><div className="stat-list">{statInfo.map((stat) => <div className="stat-row" key={stat.key}><span className="stat-name">{stat.name}</span><div className="stat-track"><i className={stat.inverse ? 'risk' : ''} style={{ width: `${Math.max(0, Math.min(99, report.stats?.[stat.key] || 0))}%` }} /></div><strong>{report.stats?.[stat.key] ?? 0}</strong></div>)}</div><div className="traits-area"><span className="micro-label">SCOUT'S NOTES</span><div className="trait-list">{(report.traits || []).map((trait) => <span key={trait}><Sparkles size={11} />{trait}</span>)}</div></div><div className="roast-box"><span className="roast-label"><Flame size={13} /> THE FILM ROOM</span><p>“{report.roast_quote}”</p></div><div className="card-bottom"><span>PROFILE SCORE · PLAYER EDITION</span><span>NOT FOR RECRUITMENT</span></div><div className="card-watermark">ProfileScore.ai</div></>}</div>
+          <div className="card-actions"><button className="card-action download-card" onClick={downloadCard} disabled={!isPaid || exporting}><Download size={15} />{exporting ? 'PREPARING PNG' : 'EXPORT PNG'}</button><button className="card-action share-card" onClick={shareCard} disabled={!isPaid || exporting}><Share2 size={15} />SHARE</button><button className="card-action story-share" onClick={shareStory} disabled={exporting}><ImagePlus size={15} />SHARE TO IG STORY</button></div>
         </div>
         <div className="report-details"><div className="report-detail-head"><div><span className="section-index">THE COACH'S NOTES</span><h3>How to level up</h3></div><BadgeCheck size={23} /></div>{isPaid && <div className="unlock-notice" role="note">💡 Tip: Bookmark this page or click the link in your Whop email receipt to access your unlocked report on any device.</div>}<div className={`unlock-content ${isPaid ? 'is-unlocked' : ''}`}>
           <div className="detail-block"><div className="detail-title"><span className="detail-icon photo-icon"><ImagePlus size={16} /></span><div><span>01 · CAMERA ROLL</span><h4>Photo order & lighting</h4></div></div><ul>{report.unlocked_report.photo_fixes.map((item, index) => <li key={`${index}-${item}`}><span className="list-number">0{index + 1}</span>{item}</li>)}</ul></div>
@@ -418,7 +470,7 @@ function App() {
           {isPaid && <div className="swipe-potential"><div className="swipe-heading"><span className="section-index">PLATFORM COMPATIBILITY</span><h4>Swipe potential</h4></div><div className="swipe-rates">{getSwipePotential(report.stats).map(({ platform, rate }) => <div className="swipe-rate" key={platform}><span>{platform} match rate</span><strong>{rate}%</strong></div>)}</div><p>Estimated from your profile scores, not a guaranteed match rate.</p></div>}
           {!isPaid && <div className="blur-overlay"><div className="lock-disc"><LockKeyhole size={32} /></div><h4>Your full scouting report is locked</h4><p>Unlock personalized photo fixes, bio options, openers, and platform compatibility.</p><button onClick={() => window.open(CHECKOUT_URL, '_blank', 'noopener,noreferrer')}>UNLOCK YOUR SCOUT REPORT ($29.99) <ArrowUpRight size={15} /></button></div>}
         </div>{isPaid && <button className="report-export" onClick={() => window.print()}><Download size={16} /> Download Full Report (PDF)</button>}<div className="report-bottom"><span><Star size={13} /> Your report is yours. Use it wisely.</span><button onClick={resetReport}>RUN ANOTHER SCAN <ChevronRight size={13} /></button></div></div>
-      </div>{isPaid && cardReady && createPortal(<HypeMeter score={report.overall_rating} animate />, cardRef.current)}{isPaid && report.photo_flags?.some((flag) => images[flag.image_index - 1]) && <div className="photo-radar" aria-label="Detected photo flags">{report.photo_flags.filter((flag) => images[flag.image_index - 1]).map((flag, index) => <figure className="radar-photo" tabIndex={0} key={`${flag.image_index}-${index}`}><img src={images[flag.image_index - 1].url} alt={`Uploaded screenshot ${flag.image_index} with ${flag.label.toLowerCase()} flagged`} /><figcaption className="radar-tag"><span className="radar-pulse" aria-hidden="true" /><span>! {flag.label}</span></figcaption></figure>)}</div>}</section>}
+      </div>{isPaid && cardReady && cardTheme === 'sports' && createPortal(<HypeMeter score={report.overall_rating} animate />, cardRef.current)}{isPaid && report.photo_flags?.some((flag) => images[flag.image_index - 1]) && <div className="photo-radar" aria-label="Detected photo flags">{report.photo_flags.filter((flag) => images[flag.image_index - 1]).map((flag, index) => <figure className="radar-photo" tabIndex={0} key={`${flag.image_index}-${index}`}><img src={images[flag.image_index - 1].url} alt={`Uploaded screenshot ${flag.image_index} with ${flag.label.toLowerCase()} flagged`} /><figcaption className="radar-tag"><span className="radar-pulse" aria-hidden="true" /><span>! {flag.label}</span></figcaption></figure>)}</div>}<div ref={storyRef} className={`story-canvas theme-${cardTheme}`} aria-hidden="true"><span className="story-brand">PROFILE SCORE AI <i>SCOUT REPORT · 2026</i></span><p className="story-hook">{report.meme_hook}</p><div className="story-card-preview"><span className="story-preview-kicker">{cardTheme === 'aesthetic' ? 'VIBE CHECK' : 'PLAYER SCOUT CARD'}</span>{cardTheme === 'aesthetic' && <strong className="story-grade">{report.aesthetic_grade}<small>AESTHETIC GRADE</small></strong>}<strong className="story-score">{report.overall_rating}<small>OVERALL</small></strong><div className="story-stats">{statInfo.map((stat) => <span key={stat.key}>{stat.name}<b>{report.stats?.[stat.key] ?? 0}</b></span>)}</div><p>{getLeagueTier(report.overall_rating).name} · WOMEN'S READ {report.women_audience_fit}%</p></div><span className="story-footer">THE PROFILE IS THE PITCH. · PROFILESCORE.AI</span></div></section>}
 
     <footer className="footer"><a className="brand footer-brand" href="#top"><span className="brand-mark"><Star size={15} fill="currentColor" /></span><span>PROFILE<span className="brand-accent">SCORE</span><small>AI SCOUTING DEPT.</small></span></a><span>THE GAME IS YOURS TO PLAY.</span><span>© 2026 PROFILESCORE AI</span></footer>
     {toast && <div className="toast"><span className="toast-check"><Check size={14} /></span>{toast}<button aria-label="Dismiss notification" onClick={() => setToast('')}><X size={14} /></button></div>}
